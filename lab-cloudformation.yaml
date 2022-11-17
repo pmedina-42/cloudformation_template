@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Full Template: Sample template.
+
+# This template creates:
+#   VPC
+#   Internet Gateway
+#   Public Route Table & route
+#   Public Subnets & associations
+#   Security Group
+#   Launch Template with User Data
+#   Auto Scaling Group
+
+######################
+# Resources section
+######################
+
+Resources:
+
+  ## VPC
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: 10.0.0.0/16
+      Tags:
+      - Key: Name
+        Value: Case6VPC
+      
+  ## Internet Gateway
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  
+  ## Public Route Table
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: PublicRouteTable
+  
+## Route
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  
+  ## Public Subnet 1a
+  
+  PublicSubnet1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: us-east-1a
+      Tags:
+      - Key: Name
+        Value: PublicSubnet1a
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1a
+      RouteTableId: !Ref PublicRouteTable
+
+  ## Public Subnet 1c
+
+  PublicSubnet1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-1c
+      Tags:
+      - Key: Name
+        Value: PublicSubnet1c
+  
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1c
+      RouteTableId: !Ref PublicRouteTable
+      
+  ## Security Group
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: VPC
+    Properties:
+      GroupDescription: Enable HTTP ingress
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Security Group
+  
+  ## Launch Template
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    DependsOn: SecurityGroup
+    Properties:
+      LaunchTemplateName: Case6LT
+      LaunchTemplateData:
+        ImageId: ami-0b0ea68c435eb488d
+        InstanceType: t2.micro
+        SecurityGroupIds:
+        - !GetAtt SecurityGroup.GroupId
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            sudo yum update -y
+            sudo amazon-linux-extras install nginx1 -y 
+            sudo systemctl enable nginx
+            sudo systemctl start nginx
+  
+  ## Auto Scaling Group
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: LaunchTemplate
+    Properties:
+      VPCZoneIdentifier:
+      - !Ref PublicSubnet1a
+      - !Ref PublicSubnet1c
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MaxSize: '4'
+      MinSize: '2'
+      DesiredCapacity: '2'
