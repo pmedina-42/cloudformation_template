@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Full Template: Sample template.
+
+# This template creates:
+#   Security Group
+#   Launch Template with User Data
+#   Auto Scaling Group
+
+######################
+# Resources section
+######################
+
+Resources:
+
+  ## Security Group
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP ingress
+      VpcId: !ImportValue 'vpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Security Group
+  
+  ## Launch Template
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    DependsOn: SecurityGroup
+    Properties:
+      LaunchTemplateName: Case6LT
+      LaunchTemplateData:
+        ImageId: ami-0b0ea68c435eb488d
+        InstanceType: t2.micro
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            sudo yum update -y
+            sudo amazon-linux-extras install nginx1 -y 
+            sudo systemctl enable nginx
+            sudo systemctl start nginx
+        NetworkInterfaces: 
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: true
+          Groups:
+          - !Ref SecurityGroup
+  
+  ## Auto Scaling Group
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: LaunchTemplate
+    Properties:
+      VPCZoneIdentifier:
+      - !ImportValue 'subnet1aid'
+      - !ImportValue 'subnet1cid'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MaxSize: '4'
+      MinSize: '2'
+      DesiredCapacity: '2'
